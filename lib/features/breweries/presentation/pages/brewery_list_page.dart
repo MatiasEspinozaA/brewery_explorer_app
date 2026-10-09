@@ -3,8 +3,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../shared/presentation/widgets/molecules/message_view.dart';
 import '../bloc/brewery_list_bloc.dart';
+import '../widgets/brewery_card.dart';
 import '../widgets/brewery_list_pagination_footer.dart';
-import '../widgets/brewery_list_tile.dart';
 
 /// Brewery list screen.
 ///
@@ -112,7 +112,7 @@ class _BreweryListBody extends StatelessWidget {
             ),
           );
         }
-        return BreweryListTile(brewery: state.breweries[index]);
+        return BreweryCard(brewery: state.breweries[index]);
       },
     );
   }
