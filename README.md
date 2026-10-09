@@ -1,6 +1,16 @@
 # brewery_explorer_app
 
-A new Flutter project.
+Explorador de cervecerías en Flutter usando la API de Open Brewery DB.
+Clean Architecture por feature (Data / Domain / Presentation), BLoC para estado,
+Dio, get_it + injectable y Material 3.
+
+## Uso de IA y documentación
+
+Parte de la entrega documenta de forma transparente el uso de IA:
+
+- [AI_TRANSPARENCY.md](AI_TRANSPARENCY.md) — prompts utilizados (verbatim) y decisiones
+  tomadas, desde el primer prompt del proyecto.
+- [HANDOFF.md](HANDOFF.md) — estado actual y pendientes.
 
 ## Getting Started
 
