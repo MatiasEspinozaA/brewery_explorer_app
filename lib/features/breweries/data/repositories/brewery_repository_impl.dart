@@ -33,4 +33,16 @@ class BreweryRepositoryImpl implements BreweryRepository {
     final dto = await _remoteDataSource.getBreweryById(id);
     return dto.toEntity();
   }
+
+  @override
+  Future<List<Brewery>> searchBreweries({
+    required String query,
+    int perPage = 20,
+  }) async {
+    final dtos = await _remoteDataSource.searchBreweries(
+      query: query,
+      perPage: perPage,
+    );
+    return dtos.map((dto) => dto.toEntity()).toList(growable: false);
+  }
 }

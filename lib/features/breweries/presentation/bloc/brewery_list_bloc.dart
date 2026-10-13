@@ -2,6 +2,7 @@ import 'package:bloc_concurrency/bloc_concurrency.dart';
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:injectable/injectable.dart';
+import 'package:stream_transform/stream_transform.dart';
 
 import '../../../../core/error/exceptions.dart';
 import '../../domain/entities/brewery.dart';
@@ -10,24 +11,39 @@ import '../../domain/repositories/brewery_repository.dart';
 part 'brewery_list_event.dart';
 part 'brewery_list_state.dart';
 
-/// Drives the paginated brewery list.
+/// Drives the paginated brewery list and the (debounced) search on top of it.
 ///
-/// Concurrency (via `bloc_concurrency`):
+/// Concurrency (via `bloc_concurrency` + `stream_transform`):
 /// - [BreweryListStarted] is `restartable` — a retry cancels any in-flight
 ///   initial load.
 /// - [BreweryListNextPageRequested] is `droppable` — while a page is loading,
 ///   extra scroll-triggered requests are ignored, preventing duplicate pages.
+/// - [BreweryListSearchChanged] is `debounce` + `restartable` — keystrokes are
+///   coalesced over [searchDebounce] and only the latest query runs; a newer
+///   query cancels an in-flight search so stale results can't win.
 ///
-/// A failed *additional* page keeps the already-loaded items and exposes a
-/// retry path (re-dispatch [BreweryListNextPageRequested]) without resetting
-/// the list.
+/// Search and list modes don't conflict: search results are a single page
+/// ([BreweryListLoadSuccess.hasReachedEnd] is `true`), so scroll-driven
+/// pagination is a no-op while searching, and clearing the query reloads the
+/// normal first page.
 @injectable
 class BreweryListBloc extends Bloc<BreweryListEvent, BreweryListState> {
-  BreweryListBloc(this._repository) : super(const BreweryListInitial()) {
+  /// [searchDebounce] is a `@factoryParam` so it stays out of DI (callers use
+  /// the 400 ms default via `getIt<BreweryListBloc>()`); tests inject a short
+  /// duration for deterministic, fast debounce/concurrency assertions.
+  BreweryListBloc(
+    this._repository, {
+    @factoryParam Duration? searchDebounce,
+  }) : super(const BreweryListInitial()) {
+    final debounce = searchDebounce ?? const Duration(milliseconds: 400);
     on<BreweryListStarted>(_onStarted, transformer: restartable());
     on<BreweryListNextPageRequested>(
       _onNextPageRequested,
       transformer: droppable(),
+    );
+    on<BreweryListSearchChanged>(
+      _onSearchChanged,
+      transformer: _debounceRestartable(debounce),
     );
   }
 
@@ -38,7 +54,11 @@ class BreweryListBloc extends Bloc<BreweryListEvent, BreweryListState> {
   Future<void> _onStarted(
     BreweryListStarted event,
     Emitter<BreweryListState> emit,
-  ) async {
+  ) => _loadFirstPage(emit);
+
+  /// Loads (or reloads) the normal first page. Shared by the initial load and
+  /// by clearing the search.
+  Future<void> _loadFirstPage(Emitter<BreweryListState> emit) async {
     emit(const BreweryListLoadInProgress());
     try {
       final breweries = await _repository.getBreweries(
@@ -58,12 +78,45 @@ class BreweryListBloc extends Bloc<BreweryListEvent, BreweryListState> {
     }
   }
 
+  Future<void> _onSearchChanged(
+    BreweryListSearchChanged event,
+    Emitter<BreweryListState> emit,
+  ) async {
+    final query = event.query.trim();
+    // An empty query means the search was cleared: restore the normal list.
+    if (query.isEmpty) {
+      await _loadFirstPage(emit);
+      return;
+    }
+
+    emit(const BreweryListLoadInProgress());
+    try {
+      final results = await _repository.searchBreweries(
+        query: query,
+        perPage: _pageSize,
+      );
+      emit(
+        BreweryListLoadSuccess(
+          breweries: results,
+          // Search is a single page: disables scroll-driven pagination.
+          hasReachedEnd: true,
+          query: query,
+        ),
+      );
+    } on AppException catch (error) {
+      emit(BreweryListLoadFailure(_userMessage(error), query: query));
+    } catch (_) {
+      emit(BreweryListLoadFailure(_genericMessage, query: query));
+    }
+  }
+
   Future<void> _onNextPageRequested(
     BreweryListNextPageRequested event,
     Emitter<BreweryListState> emit,
   ) async {
     final current = state;
-    // Paginate only when we already hold a page and more is expected.
+    // Paginate only when we already hold a page and more is expected. Search
+    // results report hasReachedEnd == true, so this naturally skips them.
     if (current is! BreweryListLoadSuccess || current.hasReachedEnd) return;
     if (current.paginationStatus == PaginationStatus.loadingMore) return;
 
@@ -77,9 +130,9 @@ class BreweryListBloc extends Bloc<BreweryListEvent, BreweryListState> {
         page: nextPage,
         perPage: _pageSize,
       );
-      // A concurrent BreweryListStarted (restartable) may have reset the list
-      // while we awaited. Only commit if this pagination is still the active
-      // one, so stale results can't clobber a fresh initial load.
+      // A concurrent BreweryListStarted (restartable) or search may have reset
+      // the list while we awaited. Only commit if this pagination is still the
+      // active one, so stale results can't clobber a fresh load.
       final latest = _ongoingPagination();
       if (latest == null) return;
       emit(
@@ -104,7 +157,7 @@ class BreweryListBloc extends Bloc<BreweryListEvent, BreweryListState> {
   /// Since `droppable` allows a single pagination at a time and only this
   /// handler ever sets [PaginationStatus.loadingMore], a `loadingMore` state
   /// uniquely identifies the pagination we started. Anything else means the
-  /// state moved on (e.g. a new initial load) and we must not emit.
+  /// state moved on (e.g. a new initial load or search) and we must not emit.
   BreweryListLoadSuccess? _ongoingPagination() {
     final current = state;
     if (current is BreweryListLoadSuccess &&
@@ -126,4 +179,11 @@ class BreweryListBloc extends Bloc<BreweryListEvent, BreweryListState> {
 
   static const String _genericMessage =
       'Something unexpected happened. Please try again.';
+}
+
+/// Debounces events over [duration], then `restartable` so only the latest one
+/// runs and a newer event cancels any in-flight handler.
+EventTransformer<E> _debounceRestartable<E>(Duration duration) {
+  return (events, mapper) =>
+      restartable<E>().call(events.debounce(duration), mapper);
 }

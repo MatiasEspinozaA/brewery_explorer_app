@@ -7,6 +7,7 @@ import '../../../../shared/presentation/widgets/molecules/message_view.dart';
 import '../bloc/brewery_list_bloc.dart';
 import '../widgets/brewery_card.dart';
 import '../widgets/brewery_list_pagination_footer.dart';
+import '../widgets/brewery_search_bar.dart';
 
 /// Brewery list screen.
 ///
@@ -22,6 +23,7 @@ class BreweryListPage extends StatefulWidget {
 
 class _BreweryListPageState extends State<BreweryListPage> {
   final ScrollController _scrollController = ScrollController();
+  final TextEditingController _searchController = TextEditingController();
 
   /// How close to the bottom (in px) triggers loading the next page.
   static const double _scrollThreshold = 300;
@@ -37,15 +39,26 @@ class _BreweryListPageState extends State<BreweryListPage> {
     _scrollController
       ..removeListener(_onScroll)
       ..dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
   void _onScroll() {
     final position = _scrollController.position;
     if (position.pixels >= position.maxScrollExtent - _scrollThreshold) {
-      // The bloc's droppable transformer + guards dedupe repeated requests.
+      // The bloc's droppable transformer + guards dedupe repeated requests and
+      // ignore pagination while a search is active.
       context.read<BreweryListBloc>().add(const BreweryListNextPageRequested());
     }
+  }
+
+  void _onSearchChanged(String query) {
+    context.read<BreweryListBloc>().add(BreweryListSearchChanged(query));
+  }
+
+  void _onSearchCleared() {
+    _searchController.clear();
+    context.read<BreweryListBloc>().add(const BreweryListSearchChanged(''));
   }
 
   @override
@@ -53,30 +66,50 @@ class _BreweryListPageState extends State<BreweryListPage> {
     return Scaffold(
       appBar: AppBar(title: const Text('Breweries')),
       body: SafeArea(
-        child: BlocBuilder<BreweryListBloc, BreweryListState>(
-          builder: (context, state) {
-            return switch (state) {
-              BreweryListInitial() ||
-              BreweryListLoadInProgress() => const Center(
-                child: CircularProgressIndicator(),
+        child: Column(
+          children: [
+            BrewerySearchBar(
+              controller: _searchController,
+              onChanged: _onSearchChanged,
+              onClear: _onSearchCleared,
+            ),
+            Expanded(
+              child: BlocBuilder<BreweryListBloc, BreweryListState>(
+                builder: (context, state) {
+                  return switch (state) {
+                    BreweryListInitial() ||
+                    BreweryListLoadInProgress() => const Center(
+                      child: CircularProgressIndicator(),
+                    ),
+                    BreweryListLoadFailure() => MessageView(
+                      icon: Icons.error_outline,
+                      title: 'Something went wrong',
+                      message: state.message,
+                      onRetry: () => _retry(context, state),
+                    ),
+                    BreweryListLoadSuccess() => _BreweryListBody(
+                      state: state,
+                      scrollController: _scrollController,
+                    ),
+                  };
+                },
               ),
-              BreweryListLoadFailure(:final message) => MessageView(
-                icon: Icons.error_outline,
-                title: 'Something went wrong',
-                message: message,
-                onRetry: () => context.read<BreweryListBloc>().add(
-                  const BreweryListStarted(),
-                ),
-              ),
-              BreweryListLoadSuccess() => _BreweryListBody(
-                state: state,
-                scrollController: _scrollController,
-              ),
-            };
-          },
+            ),
+          ],
         ),
       ),
     );
+  }
+
+  /// Retry re-runs the search when the failure happened during a search, or the
+  /// initial load otherwise.
+  void _retry(BuildContext context, BreweryListLoadFailure state) {
+    final bloc = context.read<BreweryListBloc>();
+    if (state.query.isNotEmpty) {
+      bloc.add(BreweryListSearchChanged(state.query));
+    } else {
+      bloc.add(const BreweryListStarted());
+    }
   }
 }
 
@@ -90,11 +123,17 @@ class _BreweryListBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (state.isEmpty) {
-      return const MessageView(
-        icon: Icons.sports_bar_outlined,
-        title: 'No breweries found',
-        message: 'There are no breweries to show right now.',
-      );
+      return state.isSearch
+          ? MessageView(
+              icon: Icons.search_off,
+              title: 'No results',
+              message: 'No breweries match "${state.query}".',
+            )
+          : const MessageView(
+              icon: Icons.sports_bar_outlined,
+              title: 'No breweries found',
+              message: 'There are no breweries to show right now.',
+            );
     }
 
     final showFooter = state.paginationStatus != PaginationStatus.idle;
@@ -117,8 +156,7 @@ class _BreweryListBody extends StatelessWidget {
         final brewery = state.breweries[index];
         return BreweryCard(
           brewery: brewery,
-          onTap: () =>
-              context.push(AppRoutes.breweryDetailPath(brewery.id)),
+          onTap: () => context.push(AppRoutes.breweryDetailPath(brewery.id)),
         );
       },
     );

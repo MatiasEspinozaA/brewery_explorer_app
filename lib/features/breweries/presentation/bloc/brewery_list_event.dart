@@ -19,3 +19,14 @@ final class BreweryListStarted extends BreweryListEvent {
 final class BreweryListNextPageRequested extends BreweryListEvent {
   const BreweryListNextPageRequested();
 }
+
+/// The search query changed. Debounced in the bloc; an empty [query] restores
+/// the normal paginated list.
+final class BreweryListSearchChanged extends BreweryListEvent {
+  const BreweryListSearchChanged(this.query);
+
+  final String query;
+
+  @override
+  List<Object?> get props => [query];
+}

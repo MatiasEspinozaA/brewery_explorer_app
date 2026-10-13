@@ -43,8 +43,11 @@ extension GetItInjectableX on _i174.GetIt {
     gh.factory<_i428.BreweryDetailBloc>(
       () => _i428.BreweryDetailBloc(gh<_i369.BreweryRepository>()),
     );
-    gh.factory<_i715.BreweryListBloc>(
-      () => _i715.BreweryListBloc(gh<_i369.BreweryRepository>()),
+    gh.factoryParam<_i715.BreweryListBloc, Duration?, dynamic>(
+      (searchDebounce, _) => _i715.BreweryListBloc(
+        gh<_i369.BreweryRepository>(),
+        searchDebounce: searchDebounce,
+      ),
     );
     return this;
   }

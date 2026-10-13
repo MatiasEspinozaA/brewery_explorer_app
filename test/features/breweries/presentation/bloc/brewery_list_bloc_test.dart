@@ -235,7 +235,180 @@ void main() {
       ],
     );
   });
+
+  group('search', () {
+    // Short debounce keeps these tests fast and deterministic.
+    BreweryListBloc buildFast() =>
+        BreweryListBloc(repository, searchDebounce: debounce);
+
+    final results = _breweries(3, from: 500);
+
+    blocTest<BreweryListBloc, BreweryListState>(
+      'emits results as a single, non-paginated page',
+      setUp: () => when(
+        () => repository.searchBreweries(query: 'dog', perPage: 20),
+      ).thenAnswer((_) async => results),
+      build: buildFast,
+      act: (bloc) => bloc.add(const BreweryListSearchChanged('dog')),
+      wait: const Duration(milliseconds: 80),
+      expect: () => [
+        const BreweryListLoadInProgress(),
+        BreweryListLoadSuccess(
+          breweries: results,
+          hasReachedEnd: true,
+          query: 'dog',
+        ),
+      ],
+    );
+
+    blocTest<BreweryListBloc, BreweryListState>(
+      'reports an empty search as a (search) no-results success',
+      setUp: () => when(
+        () => repository.searchBreweries(query: 'zzz', perPage: 20),
+      ).thenAnswer((_) async => const <Brewery>[]),
+      build: buildFast,
+      act: (bloc) => bloc.add(const BreweryListSearchChanged('zzz')),
+      wait: const Duration(milliseconds: 80),
+      expect: () => [
+        const BreweryListLoadInProgress(),
+        const BreweryListLoadSuccess(
+          breweries: [],
+          hasReachedEnd: true,
+          query: 'zzz',
+        ),
+      ],
+      verify: (bloc) {
+        final state = bloc.state as BreweryListLoadSuccess;
+        expect(state.isEmpty, isTrue);
+        expect(state.isSearch, isTrue);
+      },
+    );
+
+    blocTest<BreweryListBloc, BreweryListState>(
+      'maps a search error to a failure that remembers the query',
+      setUp: () => when(
+        () => repository.searchBreweries(query: 'dog', perPage: 20),
+      ).thenThrow(const NetworkException()),
+      build: buildFast,
+      act: (bloc) => bloc.add(const BreweryListSearchChanged('dog')),
+      wait: const Duration(milliseconds: 80),
+      expect: () => [
+        const BreweryListLoadInProgress(),
+        const BreweryListLoadFailure(
+          'No internet connection. Check your network and try again.',
+          query: 'dog',
+        ),
+      ],
+    );
+
+    blocTest<BreweryListBloc, BreweryListState>(
+      'debounces rapid keystrokes: only the last query hits the network once',
+      setUp: () => when(
+        () => repository.searchBreweries(query: 'abc', perPage: 20),
+      ).thenAnswer((_) async => results),
+      build: buildFast,
+      act: (bloc) async {
+        bloc.add(const BreweryListSearchChanged('a'));
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+        bloc.add(const BreweryListSearchChanged('ab'));
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+        bloc.add(const BreweryListSearchChanged('abc'));
+      },
+      wait: const Duration(milliseconds: 80),
+      expect: () => [
+        const BreweryListLoadInProgress(),
+        BreweryListLoadSuccess(
+          breweries: results,
+          hasReachedEnd: true,
+          query: 'abc',
+        ),
+      ],
+      verify: (_) {
+        verify(
+          () => repository.searchBreweries(query: 'abc', perPage: 20),
+        ).called(1);
+        verifyNever(
+          () => repository.searchBreweries(query: 'a', perPage: 20),
+        );
+        verifyNever(
+          () => repository.searchBreweries(query: 'ab', perPage: 20),
+        );
+      },
+    );
+
+    blocTest<BreweryListBloc, BreweryListState>(
+      'restartable: a newer query wins and the slow stale result is discarded',
+      setUp: () {
+        when(
+          () => repository.searchBreweries(query: 'slow', perPage: 20),
+        ).thenAnswer((_) async {
+          await Future<void>.delayed(const Duration(milliseconds: 150));
+          return _breweries(2, from: 900);
+        });
+        when(
+          () => repository.searchBreweries(query: 'fast', perPage: 20),
+        ).thenAnswer((_) async => results);
+      },
+      build: buildFast,
+      act: (bloc) async {
+        bloc.add(const BreweryListSearchChanged('slow'));
+        // Let 'slow' pass the debounce and start before 'fast' supersedes it.
+        await Future<void>.delayed(const Duration(milliseconds: 40));
+        bloc.add(const BreweryListSearchChanged('fast'));
+      },
+      wait: const Duration(milliseconds: 250),
+      expect: () => [
+        const BreweryListLoadInProgress(),
+        BreweryListLoadSuccess(
+          breweries: results,
+          hasReachedEnd: true,
+          query: 'fast',
+        ),
+      ],
+    );
+
+    blocTest<BreweryListBloc, BreweryListState>(
+      'clearing the search restores the normal first page',
+      setUp: () => when(
+        () => repository.getBreweries(page: 1, perPage: 20),
+      ).thenAnswer((_) async => page1),
+      build: buildFast,
+      seed: () => BreweryListLoadSuccess(
+        breweries: results,
+        hasReachedEnd: true,
+        query: 'dog',
+      ),
+      act: (bloc) => bloc.add(const BreweryListSearchChanged('')),
+      wait: const Duration(milliseconds: 80),
+      expect: () => [
+        const BreweryListLoadInProgress(),
+        BreweryListLoadSuccess(breweries: page1, hasReachedEnd: false),
+      ],
+      verify: (_) =>
+          verify(() => repository.getBreweries(page: 1, perPage: 20)).called(1),
+    );
+
+    blocTest<BreweryListBloc, BreweryListState>(
+      'does not paginate while showing search results',
+      build: buildFast,
+      seed: () => BreweryListLoadSuccess(
+        breweries: results,
+        hasReachedEnd: true,
+        query: 'dog',
+      ),
+      act: (bloc) => bloc.add(const BreweryListNextPageRequested()),
+      expect: () => const <BreweryListState>[],
+      verify: (_) => verifyNever(
+        () => repository.getBreweries(
+          page: any(named: 'page'),
+          perPage: any(named: 'perPage'),
+        ),
+      ),
+    );
+  });
 }
+
+const debounce = Duration(milliseconds: 20);
 
 List<Brewery> _breweries(int count, {int from = 0}) {
   return List.generate(

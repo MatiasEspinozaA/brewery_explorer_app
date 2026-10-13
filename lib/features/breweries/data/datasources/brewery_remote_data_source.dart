@@ -17,6 +17,11 @@ abstract interface class BreweryRemoteDataSource {
   });
 
   Future<BreweryDto> getBreweryById(String id);
+
+  Future<List<BreweryDto>> searchBreweries({
+    required String query,
+    required int perPage,
+  });
 }
 
 @LazySingleton(as: BreweryRemoteDataSource)
@@ -66,6 +71,30 @@ class BreweryRemoteDataSourceImpl implements BreweryRemoteDataSource {
       rethrow;
     } catch (error) {
       throw ParsingException('Failed to parse brewery $id: $error');
+    }
+  }
+
+  @override
+  Future<List<BreweryDto>> searchBreweries({
+    required String query,
+    required int perPage,
+  }) async {
+    try {
+      final response = await _dio.get<List<dynamic>>(
+        ApiConstants.breweriesSearch,
+        queryParameters: {'query': query, 'per_page': perPage},
+      );
+      final data = response.data ?? const [];
+      return data
+          .cast<Map<String, dynamic>>()
+          .map(BreweryDto.fromJson)
+          .toList(growable: false);
+    } on DioException catch (error) {
+      throw mapDioException(error);
+    } on AppException {
+      rethrow;
+    } catch (error) {
+      throw ParsingException('Failed to parse search results: $error');
     }
   }
 }

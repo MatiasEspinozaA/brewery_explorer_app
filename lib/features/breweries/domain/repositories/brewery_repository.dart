@@ -18,4 +18,13 @@ abstract interface class BreweryRepository {
   /// Throws a `NotFoundException` when the id does not exist, or another
   /// [AppException] subtype on other failures.
   Future<Brewery> getBreweryById(String id);
+
+  /// Full-text search over breweries matching [query].
+  ///
+  /// Returns an empty list when nothing matches. Throws an [AppException]
+  /// subtype on failure; never returns `null`.
+  Future<List<Brewery>> searchBreweries({
+    required String query,
+    int perPage = 20,
+  });
 }

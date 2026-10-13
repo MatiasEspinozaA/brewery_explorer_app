@@ -283,3 +283,47 @@ los componentes existentes sin agregar complejidad innecesaria."
   ("Couldn't open this link.") sin crash; en dispositivo real abriría el marcador. ✓
 - **Botón "Back"**: vuelve al listado. ✓
 - `flutter analyze` sin issues; reconstrucción con `pod install` (plugin nativo) OK.
+
+**P5.** "Implementemos el bonus de búsqueda con debounce utilizando el endpoint de búsqueda
+de Open Brewery DB. Agrega un SearchBar de Material 3 al listado y utiliza BreweryListBloc
+con bloc_concurrency para gestionar las búsquedas, aplicando un debounce de 400 ms y
+evitando solicitudes innecesarias o resultados obsoletos. Considera los estados de carga,
+error y sin resultados. Al limpiar la búsqueda debe restaurarse el listado normal con su
+infinite scroll, evitando conflictos entre ambos modos. Mantén nuestra arquitectura,
+Atomic Design y componentes reutilizables. Agrega pruebas para el debounce y la
+concurrencia, y valida con flutter test y flutter analyze."
+
+### Decisiones tomadas (búsqueda con debounce)
+
+- **Capa de datos**: nuevo `searchBreweries(query, perPage)` en datasource y repositorio
+  (endpoint `/breweries/search`), con el mismo mapeo de errores tipados.
+- **Mismo `BreweryListBloc`** (como se pidió): nuevo evento `BreweryListSearchChanged(query)`
+  con transformer **debounce (400 ms) + restartable** (`stream_transform.debounce` encadenado
+  con `bloc_concurrency.restartable`). El debounce colapsa las pulsaciones (evita solicitudes
+  innecesarias) y `restartable` cancela una búsqueda en vuelo cuando llega una más nueva
+  (evita resultados obsoletos).
+- **Sin conflicto entre modos**: los resultados de búsqueda se emiten como una sola página
+  (`hasReachedEnd: true`), así el `NextPageRequested` queda deshabilitado por la guarda
+  existente mientras se busca. Al limpiar (`query` vacío) se recarga la primera página normal,
+  restaurando el infinite scroll. La guarda `_ongoingPagination()` además descarta una
+  paginación en vuelo si el modo cambió.
+- **Estado**: se añadió `query` a `LoadSuccess`/`LoadFailure` (getter `isSearch`) para
+  distinguir resultados de búsqueda, su estado "sin resultados" y para que el reintento
+  re-ejecute la búsqueda (no la lista normal).
+- **Debounce testeable**: el bloc recibe `searchDebounce` como `@factoryParam` (fuera de DI;
+  `getIt` usa el default de 400 ms, los tests inyectan 20 ms para ser rápidos y
+  deterministas).
+- **UI (Atomic Design)**: nuevo widget `BrewerySearchBar` (molecule, Material 3 `SearchBar`,
+  desacoplado del bloc vía callbacks; botón de limpiar condicional). La página lo coloca
+  sobre la lista dentro de `SafeArea`; estados de carga/error/sin-resultados reutilizan
+  `MessageView`. El reintento distingue búsqueda vs lista por `state.query`.
+- **Tests**: debounce (solo la última query pega a la red, una vez), restartable (gana la
+  query más nueva y se descarta el resultado lento), limpiar restaura la primera página,
+  éxito/vacío/error de búsqueda, y que no pagina en modo búsqueda. Más widget tests de
+  `BrewerySearchBar`. Total 43 tests, `flutter analyze` sin issues.
+
+### Validación en simulador
+
+- SearchBar M3 renderiza; escribir "dog" (rápido) dispara **una** búsqueda tras el debounce
+  y muestra resultados. Estado de carga (spinner), sin-resultados ("No breweries match
+  …"), y limpiar (X) restaura el listado normal — todo verificado. ✓
