@@ -17,6 +17,8 @@ import 'package:brewery_explorer_app/features/breweries/data/repositories/brewer
     as _i431;
 import 'package:brewery_explorer_app/features/breweries/domain/repositories/brewery_repository.dart'
     as _i369;
+import 'package:brewery_explorer_app/features/breweries/presentation/bloc/brewery_detail_bloc.dart'
+    as _i428;
 import 'package:brewery_explorer_app/features/breweries/presentation/bloc/brewery_list_bloc.dart'
     as _i715;
 import 'package:dio/dio.dart' as _i361;
@@ -37,6 +39,9 @@ extension GetItInjectableX on _i174.GetIt {
     );
     gh.lazySingleton<_i369.BreweryRepository>(
       () => _i431.BreweryRepositoryImpl(gh<_i3.BreweryRemoteDataSource>()),
+    );
+    gh.factory<_i428.BreweryDetailBloc>(
+      () => _i428.BreweryDetailBloc(gh<_i369.BreweryRepository>()),
     );
     gh.factory<_i715.BreweryListBloc>(
       () => _i715.BreweryListBloc(gh<_i369.BreweryRepository>()),

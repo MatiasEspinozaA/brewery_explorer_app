@@ -9,6 +9,9 @@ class BreweryDto {
     required this.id,
     required this.name,
     required this.breweryType,
+    this.address1,
+    this.address2,
+    this.address3,
     this.street,
     this.city,
     this.stateProvince,
@@ -23,7 +26,17 @@ class BreweryDto {
   final String id;
   final String name;
   final String breweryType;
+
+  /// Canonical street-address lines from the API (`address_1/2/3`). The detail
+  /// screen builds its address block from these.
+  final String? address1;
+  final String? address2;
+  final String? address3;
+
+  /// Legacy single-line street. The API still ships it; it typically mirrors
+  /// [address1]. Kept as a fallback for older records where `address_1` is null.
   final String? street;
+
   final String? city;
   final String? stateProvince;
   final String? postalCode;
@@ -38,6 +51,9 @@ class BreweryDto {
       id: json['id'] as String,
       name: json['name'] as String,
       breweryType: json['brewery_type'] as String,
+      address1: json['address_1'] as String?,
+      address2: json['address_2'] as String?,
+      address3: json['address_3'] as String?,
       street: json['street'] as String?,
       city: json['city'] as String?,
       stateProvince: json['state_province'] as String?,
@@ -56,6 +72,9 @@ class BreweryDto {
     id: id,
     name: name,
     breweryType: breweryType,
+    address1: address1,
+    address2: address2,
+    address3: address3,
     street: street,
     city: city,
     stateProvince: stateProvince,

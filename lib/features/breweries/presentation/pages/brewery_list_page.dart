@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../../app/router/app_router.dart';
 import '../../../../shared/presentation/widgets/molecules/message_view.dart';
 import '../bloc/brewery_list_bloc.dart';
 import '../widgets/brewery_card.dart';
@@ -112,7 +114,12 @@ class _BreweryListBody extends StatelessWidget {
             ),
           );
         }
-        return BreweryCard(brewery: state.breweries[index]);
+        final brewery = state.breweries[index];
+        return BreweryCard(
+          brewery: brewery,
+          onTap: () =>
+              context.push(AppRoutes.breweryDetailPath(brewery.id)),
+        );
       },
     );
   }
