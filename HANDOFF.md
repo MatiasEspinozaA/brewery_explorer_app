@@ -1,54 +1,64 @@
 # Handoff — Brewery Explorer App
 
-_Última actualización: 2026-10-09_
+_Última actualización: 2026-10-13_
 
 ## Contexto
 
 App Flutter para explorar cervecerías usando la API pública de Open Brewery DB.
-Arquitectura limpia (data / domain / presentation) por feature, BLoC para estado,
-`get_it` + `injectable` para inyección de dependencias y Material 3 con tema por
-`ColorScheme.fromSeed`.
+Clean Architecture por feature (data / domain / presentation), BLoC para estado,
+`get_it` + `injectable` para inyección de dependencias, `go_router` para navegación y
+Material 3 con tema por `ColorScheme.fromSeed`. Ver [README.md](README.md) para la
+documentación completa.
 
 ## Estado actual
 
-### Hecho en esta sesión
-- **Primer commit** del scaffold del proyecto (`8640337`). Se excluyó del repo el
-  PDF del enunciado del test vía `.gitignore` (`*.pdf`), por no ser parte de la app.
-- **Rediseño de la tarjeta del listado** (`133d47d`): se reemplazó `BreweryListTile`
-  por un nuevo `BreweryCard` en Material 3 siguiendo Atomic Design.
-  - `lib/shared/presentation/widgets/atoms/app_badge.dart` — nuevo átomo `AppBadge`
-    (pill reutilizable) promovido desde el antiguo badge privado.
-  - `lib/features/breweries/presentation/widgets/brewery_card.dart` — nueva tarjeta
-    del feature: nombre, badge de tipo, ubicación (ciudad + país con ícono de pin) y
-    chevron de acceso al detalle. Maneja nombres largos (2 líneas + elipsis), campos
-    opcionales y distintos anchos de pantalla.
-  - `lib/features/breweries/presentation/pages/brewery_list_page.dart` — usa `BreweryCard`.
-  - Se eliminó `brewery_list_tile.dart`.
-  - Verificado con `flutter analyze` (sin issues) y visualmente en el simulador
-    iPhone 16 Pro.
+Desarrollo **finalizado**; se cumplieron los objetivos del proyecto (incluido el bonus de
+búsqueda). Rama `main`, working tree limpio.
 
-### Estado del repo
-- Rama `main`, working tree limpio.
-- Commits: `8640337` (scaffold) → `133d47d` (BreweryCard).
+### Funcionalidades implementadas
 
-## Pendiente / próximos pasos
+- **Listado** con scroll infinito y control de concurrencia (`restartable` + `droppable`;
+  una paginación en vuelo no sobrescribe una recarga).
+- **Detalle** por ID: nombre, dirección (multilínea), teléfono y sitio web, con acciones
+  de **Maps**, **llamar** y **abrir web** (`url_launcher`). AppBar sin título (nombre como
+  hero), tarjeta agrupada M3 y botón de volver.
+- **Búsqueda con debounce (400 ms)** sobre `/breweries/search`, con cancelación de
+  resultados obsoletos (`debounce` + `restartable`). Al limpiar se restaura el listado
+  normal con su scroll infinito.
+- **Estados** de carga, error (con reintento), vacío y "sin resultados" en todas las
+  pantallas.
 
-- **Pantalla de detalle**: `BreweryCard.onTap` ya existe pero no está cableado. Falta
-  crear la ruta/página de detalle y pasarle el `onTap` desde `brewery_list_page.dart`.
-- **Tests**: no hay tests de widget/unidad para `BreweryCard` ni `AppBadge`. Sugerido:
-  casos de nombre largo, ciudad/país ausentes (fallback "Location unavailable") y
-  render del badge.
-- **Pantallas grandes / tablets**: la tarjeta flexa al ancho disponible, pero el
-  `ListView` no limita el ancho máximo. Considerar centrar/acotar la lista en pantallas
-  anchas.
-- **Dark mode**: el tema y los componentes usan tokens del `ColorScheme`, pero no se
-  verificó visualmente en oscuro.
-- **Localización**: strings en inglés hardcodeados ("Breweries", "Location unavailable",
-  etc.). Evaluar `intl` si se requiere i18n.
+### Tests
+
+- **43 tests** (`flutter test`) y `flutter analyze` sin issues.
+- Cubren: BLoCs de listado y detalle (carga/errores/reintentos/paginación/concurrencia y
+  debounce), mapeo del DTO, `addressLines` de la entidad y widgets (`BreweryCard`,
+  `InfoTile`, `BrewerySearchBar`).
+
+### Historial de commits (rama `main`)
+
+- `8640337` scaffold inicial → `133d47d` BreweryCard → `a1a9820`/`a863933` docs →
+  `e1a4a74` pantalla de detalle + navegación + acciones → `9156753` suite de tests →
+  `9eb7caa` bonus de búsqueda con debounce → (docs: README + este handoff).
+
+## Documentación
+
+- [README.md](README.md) — ejecución, arquitectura, funcionalidades, tests, decisiones,
+  trade-offs y mejoras futuras.
+- [AI_TRANSPARENCY.md](AI_TRANSPARENCY.md) — prompts (verbatim) y decisiones por sesión.
+
+## Mejoras futuras (no abordadas, fuera de alcance)
+
+- Caché/offline en el repositorio y pull-to-refresh.
+- Internacionalización (`intl`); hoy los strings están en inglés hardcodeados.
+- Paginación de resultados de búsqueda.
+- Más tests (widget de `BreweryDetailPage`, golden, integración lista → detalle).
+- Acotar ancho en tablets/pantallas anchas y verificación visual de dark mode.
 
 ## Cómo correr
 
 ```bash
 flutter pub get
-flutter run -d <id-del-simulador>   # p.ej. iPhone 16 Pro
+dart run build_runner build   # solo si se cambian anotaciones @injectable
+flutter run -d <id-del-dispositivo>
 ```
